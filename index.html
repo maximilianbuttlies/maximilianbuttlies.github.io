@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Team Feedback Übersicht</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-50 p-6 font-sans">
+    <div class="max-w-6xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8 text-center">
+        Team Feedback Übersicht
+      </h1>
+      <form id="upload-form" class="mb-8">
+        <label class="block mb-2 font-medium"
+          >ZIP mit CSV-Dateien hochladen:</label
+        >
+        <input type="file" id="zip-file" accept=".zip" class="mb-4" />
+      </form>
+      <div id="trend-summary" class="mb-12"></div>
+      <div id="feedback-container" class="space-y-8"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+      document
+        .getElementById("zip-file")
+        .addEventListener("change", async function (event) {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          const zip = await JSZip.loadAsync(file);
+          let allRows = [];
+
+          for (const filename of Object.keys(zip.files)) {
+            if (filename.endsWith(".csv")) {
+              const content = await zip.files[filename].async("string");
+              const rows = content
+                .trim()
+                .split("\n")
+                .slice(1)
+                .map((line) => {
+                  const [nummer, frage, kategorie, antwort] = line
+                    .split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/)
+                    .map((x) => x.replace(/^\"|\"$/g, ""));
+                  return { frage, kategorie, antwort };
+                });
+              allRows = allRows.concat(rows);
+            }
+          }
+
+          const grouped = allRows.reduce((acc, item) => {
+            acc[item.kategorie] = acc[item.kategorie] || [];
+            acc[item.kategorie].push(item);
+            return acc;
+          }, {});
+
+          const trendSummary = Object.entries(grouped).map(
+            ([kategorie, fragen]) => {
+              const total = fragen.length;
+              const yes = fragen.filter(
+                (f) => f.antwort.indexOf("yes") > -1
+              ).length;
+              const no = fragen.filter(
+                (f) => f.antwort.indexOf("no") > -1
+              ).length;
+              const uncertain = fragen.filter(
+                (f) => f.antwort.indexOf("uncertain") > -1
+              ).length;
+              const yesPercent = Math.round((yes / total) * 100);
+              return {
+                kategorie,
+                summary: `${yesPercent}% Zustimmung, ${no} Nein, ${uncertain} Unklar`,
+              };
+            }
+          );
+
+          const trendContainer = document.getElementById("trend-summary");
+          trendContainer.innerHTML = `
+        <h2 class="text-2xl font-semibold mb-4">Trendanalyse</h2>
+        <ul class="list-disc ml-6 space-y-2">
+          ${trendSummary
+            .map(
+              (item) =>
+                `<li><strong>${item.kategorie}:</strong> ${item.summary}</li>`
+            )
+            .join("")}
+        </ul>
+      `;
+
+          const container = document.getElementById("feedback-container");
+          container.innerHTML = "";
+
+          for (const [kategorie, fragen] of Object.entries(grouped)) {
+            const section = document.createElement("section");
+            section.innerHTML = `
+          <h2 class="text-2xl font-semibold mb-4">${kategorie}</h2>
+          <div class="overflow-x-auto">
+            <table class="min-w-full bg-white shadow-md rounded-lg">
+              <thead class="bg-gray-200 text-gray-600 uppercase text-sm">
+                <tr>
+                  <th class="py-3 px-4 text-left">Frage</th>
+                  <th class="py-3 px-4 text-left">Antwort</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${fragen
+                  .map(
+                    (f) => `
+                  <tr>
+                    <td class="border-t py-2 px-4">${f.frage}</td>
+                    <td class="border-t py-2 px-4">
+                      <span class="px-2 py-1 rounded text-white ${
+                        f.antwort.indexOf("yes") > -1
+                          ? "bg-green-500"
+                          : f.antwort.indexOf("no") > -1
+                          ? "bg-red-500"
+                          : "bg-yellow-500"
+                      }">
+                        ${
+                          f.antwort.indexOf("yes") > -1
+                            ? "Ja"
+                            : f.antwort.indexOf("no") > -1
+                            ? "Nein"
+                            : "Unklar"
+                        }
+                      </span>
+                    </td>
+                  </tr>
+                `
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+            container.appendChild(section);
+          }
+        });
+    </script>
+  </body>
+</html>
