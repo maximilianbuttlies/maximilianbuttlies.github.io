@@ -70,7 +70,7 @@
               const yesPercent = Math.round((yes / total) * 100);
               return {
                 kategorie,
-                summary: `${yesPercent}% Zustimmung, ${no} Nein, ${uncertain} Unklar`,
+                summary: `${yesPercent}% Zustimmung, ${no}% Nein, ${uncertain}% Unklar`,
               };
             }
           );
@@ -93,6 +93,11 @@
 
           for (const [kategorie, fragen] of Object.entries(grouped)) {
             const section = document.createElement("section");
+            const groupedQuestions = fragen.reduce((acc, item) => {
+              acc[item.frage] = acc[item.frage] || [];
+              acc[item.frage].push(item);
+              return acc;
+            }, {});
             section.innerHTML = `
           <h2 class="text-2xl font-semibold mb-4">${kategorie}</h2>
           <div class="overflow-x-auto">
@@ -100,31 +105,34 @@
               <thead class="bg-gray-200 text-gray-600 uppercase text-sm">
                 <tr>
                   <th class="py-3 px-4 text-left">Frage</th>
-                  <th class="py-3 px-4 text-left">Antwort</th>
+                  <th class="py-3 px-4 text-left">Ja</th>
+                  <th class="py-3 px-4 text-left">Nein</th>
+                  <th class="py-3 px-4 text-left">Unklar</th>
                 </tr>
               </thead>
               <tbody>
-                ${fragen
+                ${Object.keys(groupedQuestions)
                   .map(
                     (f) => `
                   <tr>
-                    <td class="border-t py-2 px-4">${f.frage}</td>
+                    <td class="border-t py-2 px-4">${f}</td>
                     <td class="border-t py-2 px-4">
-                      <span class="px-2 py-1 rounded text-white ${
-                        f.antwort.indexOf("yes") > -1
-                          ? "bg-green-500"
-                          : f.antwort.indexOf("no") > -1
-                          ? "bg-red-500"
-                          : "bg-yellow-500"
-                      }">
-                        ${
-                          f.antwort.indexOf("yes") > -1
-                            ? "Ja"
-                            : f.antwort.indexOf("no") > -1
-                            ? "Nein"
-                            : "Unklar"
-                        }
-                      </span>
+                  ${
+                    groupedQuestions[f].filter(
+                      (f) => f.antwort.indexOf("yes") > -1
+                    ).length
+                  }</td>
+                                                     <td class="border-t py-2 px-4">
+${groupedQuestions[f].filter((f) => f.antwort.indexOf("no") > -1).length}</td>
+
+                                                     <td class="border-t py-2 px-4">
+${
+  groupedQuestions[f].filter((f) => f.antwort.indexOf("uncertain") > -1).length
+}</td>
+
+
+                           
+                         
                     </td>
                   </tr>
                 `
