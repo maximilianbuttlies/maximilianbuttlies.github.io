@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Team Feedback Übersicht</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   </head>
   <body class="bg-gray-50 p-6 font-sans">
     <div class="max-w-6xl mx-auto">
@@ -35,16 +37,15 @@
           for (const filename of Object.keys(zip.files)) {
             if (filename.endsWith(".csv")) {
               const content = await zip.files[filename].async("string");
-              const rows = content
-                .trim()
-                .split("\n")
-                .slice(1)
-                .map((line) => {
-                  const [nummer, frage, kategorie, antwort] = line
-                    .split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/)
-                    .map((x) => x.replace(/^\"|\"$/g, ""));
-                  return { frage, kategorie, antwort };
-                });
+              const parsed = Papa.parse(content, {
+                header: true,
+                skipEmptyLines: true,
+              });
+              const rows = parsed.data.map((row) => ({
+                frage: (row.frage || "").trim(),
+                kategorie: (row.kategorie || "").trim(),
+                antwort: (row.antwort || "").trim(),
+              }));
               allRows = allRows.concat(rows);
             }
           }
@@ -55,38 +56,82 @@
             return acc;
           }, {});
 
-          const trendSummary = Object.entries(grouped).map(
-            ([kategorie, fragen]) => {
-              const total = fragen.length;
-              const yes = fragen.filter(
-                (f) => f.antwort.indexOf("yes") > -1
-              ).length;
-              const no = fragen.filter(
-                (f) => f.antwort.indexOf("no") > -1
-              ).length;
-              const uncertain = fragen.filter(
-                (f) => f.antwort.indexOf("uncertain") > -1
-              ).length;
-              const yesPercent = Math.round((yes / total) * 100);
-              return {
-                kategorie,
-                summary: `${yesPercent}% Zustimmung, ${no}% Nein, ${uncertain}% Unklar`,
-              };
-            }
+          const trendContainer = document.getElementById("trend-summary");
+          trendContainer.innerHTML =
+            "<canvas id='line-category-trend'></canvas>";
+
+          const labels = Object.keys(grouped);
+          const yesData = labels.map(
+            (kat) =>
+              grouped[kat].filter((f) => f.antwort.indexOf("yes") > -1).length
+          );
+          const noData = labels.map(
+            (kat) =>
+              grouped[kat].filter((f) => f.antwort.indexOf("no") > -1).length
+          );
+          const uncertainData = labels.map(
+            (kat) =>
+              grouped[kat].filter((f) => f.antwort.indexOf("uncertain") > -1)
+                .length
           );
 
-          const trendContainer = document.getElementById("trend-summary");
-          trendContainer.innerHTML = `
-        <h2 class="text-2xl font-semibold mb-4">Trendanalyse</h2>
-        <ul class="list-disc ml-6 space-y-2">
-          ${trendSummary
-            .map(
-              (item) =>
-                `<li><strong>${item.kategorie}:</strong> ${item.summary}</li>`
-            )
-            .join("")}
-        </ul>
-      `;
+          new Chart(document.getElementById("line-category-trend"), {
+            type: "line",
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: "Ja",
+                  data: yesData,
+                  borderColor: "#16a34a",
+                  backgroundColor: "#16a34a",
+                  fill: false,
+                },
+                {
+                  label: "Nein",
+                  data: noData,
+                  borderColor: "#dc2626",
+                  backgroundColor: "#dc2626",
+                  fill: false,
+                },
+                {
+                  label: "Unklar",
+                  data: uncertainData,
+                  borderColor: "#ca8a04",
+                  backgroundColor: "#ca8a04",
+                  fill: false,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                title: {
+                  display: true,
+                  text: "Antwortverteilung je Kategorie (Liniendiagramm)",
+                },
+              },
+              interaction: {
+                mode: "index",
+                intersect: false,
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  title: {
+                    display: true,
+                    text: "Anzahl Antworten",
+                  },
+                },
+                x: {
+                  title: {
+                    display: true,
+                    text: "Kategorien",
+                  },
+                },
+              },
+            },
+          });
 
           const container = document.getElementById("feedback-container");
           container.innerHTML = "";
@@ -98,50 +143,78 @@
               acc[item.frage].push(item);
               return acc;
             }, {});
-            section.innerHTML = `
-          <h2 class="text-2xl font-semibold mb-4">${kategorie}</h2>
-          <div class="overflow-x-auto">
-            <table class="min-w-full bg-white shadow-md rounded-lg">
-              <thead class="bg-gray-200 text-gray-600 uppercase text-sm">
-                <tr>
-                  <th class="py-3 px-4 text-left">Frage</th>
-                  <th class="py-3 px-4 text-left">Ja</th>
-                  <th class="py-3 px-4 text-left">Nein</th>
-                  <th class="py-3 px-4 text-left">Unklar</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${Object.keys(groupedQuestions)
-                  .map(
-                    (f) => `
+
+            let tableHTML = `
+            <h2 class="text-2xl font-semibold mb-4">${kategorie}</h2>
+            <div class="overflow-x-auto">
+              <table class="min-w-full bg-white shadow-md rounded-lg">
+                <thead class="bg-gray-200 text-gray-600 uppercase text-sm">
                   <tr>
-                    <td class="border-t py-2 px-4">${f}</td>
-                    <td class="border-t py-2 px-4">
-                  ${
-                    groupedQuestions[f].filter(
-                      (f) => f.antwort.indexOf("yes") > -1
-                    ).length
-                  }</td>
-                                                     <td class="border-t py-2 px-4">
-${groupedQuestions[f].filter((f) => f.antwort.indexOf("no") > -1).length}</td>
-
-                                                     <td class="border-t py-2 px-4">
-${
-  groupedQuestions[f].filter((f) => f.antwort.indexOf("uncertain") > -1).length
-}</td>
-
-
-                           
-                         
-                    </td>
+                    <th class="py-3 px-4 text-left">Frage</th>
+                    <th class="py-3 px-4 text-left">Ja</th>
+                    <th class="py-3 px-4 text-left">Nein</th>
+                    <th class="py-3 px-4 text-left">Unklar</th>
                   </tr>
-                `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        `;
+                </thead>
+                <tbody>
+          `;
+
+            let chartCount = 0;
+            for (const [frage, eintraege] of Object.entries(groupedQuestions)) {
+              const yes = eintraege.filter(
+                (x) => x.antwort.indexOf("yes") > -1
+              ).length;
+              const no = eintraege.filter(
+                (x) => x.antwort.indexOf("no") > -1
+              ).length;
+              const uncertain = eintraege.filter(
+                (x) => x.antwort.indexOf("uncertain") > -1
+              ).length;
+
+              tableHTML += `
+              <tr>
+                <td class="border-t py-2 px-4">${frage}</td>
+                <td class="border-t py-2 px-4">${yes}</td>
+                <td class="border-t py-2 px-4">${no}</td>
+                <td class="border-t py-2 px-4">${uncertain}</td>
+              </tr> 
+            `;
+
+              setTimeout(() => {
+                new Chart(
+                  document.getElementById(
+                    `chart-${kategorie.replace(/\s+/g, "-")}-${chartCount}`
+                  ),
+                  {
+                    type: "bar",
+                    data: {
+                      labels: ["Ja", "Nein", "Unklar"],
+                      datasets: [
+                        {
+                          label: frage,
+                          data: [yes, no, uncertain],
+                          backgroundColor: ["#16a34a", "#dc2626", "#ca8a04"],
+                        },
+                      ],
+                    },
+                    options: {
+                      responsive: true,
+                      plugins: {
+                        title: {
+                          display: true,
+                          text: frage,
+                        },
+                      },
+                    },
+                  }
+                );
+              }, 0);
+
+              chartCount++;
+            }
+
+            tableHTML += `</tbody></table></div>`;
+            section.innerHTML = tableHTML;
             container.appendChild(section);
           }
         });
